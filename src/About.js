@@ -5,7 +5,7 @@ const About = () => {
     return (
         <Container>
             <Typography variant="h4" gutterBottom>About Page</Typography>
-            <Typography>This is a placeholder for the About page content.</Typography>
+            <Typography>{process.env.REACT_APP_ABOUT_TEXT}</Typography>
         </Container>
     );
 };

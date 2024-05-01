@@ -2,118 +2,169 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const SelectedThread = () => {
-    const [selectedThread, setSelectedThread] = useState(null);
     const [inputValue, setInputValue] = useState('');
     const [messages, setMessages] = useState([]);
-    const [threads, setThreads] = useState([]);
+    const [threadId, setThreadId] = useState(null);
     const [error, setError] = useState(null);
-    const host = "http://localhost:3000"
+    const [suggestedQuestions, setSuggestedQuestions] = useState([]);
+    const host = process.env.REACT_APP_ENDPOINT;
+    var messagenumber = 0
     useEffect(() => {
-        fetchThreads();
+        // Parse suggested questions from the environment variable
+        const questions = process.env.REACT_APP_QUESTIONS ? process.env.REACT_APP_QUESTIONS.split(',') : [];
+        setSuggestedQuestions(questions);
     }, []);
 
-    const fetchThreads = async () => {
+    // Function to ensure a thread ID is available
+    const ensureThreadId = async (inputValue) => {
+        if (threadId) return threadId;
+
         try {
-            const response = await axios.get(host+'/threads');
-            setThreads(response.data);
+            const initialMessage = { role: 'user', content: inputValue };
+            const response = await axios.post(`${host}/createThread`, { initialMessage });
+            setThreadId(response.data.id);
+
+            return response.data.id;
         } catch (error) {
-            console.error('Error fetching threads:', error);
-            setError('Failed to fetch threads. Please try again.');
+            console.error('Error creating thread:', error);
+            setError('Failed to create thread. Please try again.');
+            return null;
         }
     };
 
-    const handleThreadChange = async (thread) => {
-        setSelectedThread(thread);
-        setMessages([]); // Clear messages when selecting a new thread
-        await listMessages(thread.id); // Fetch messages for the selected thread
+    // Function to trigger a backend process on the thread
+
+    // Function to fetch the last message from the server
+    const fetchLastMessage = async (ensuredThreadId) => {
+        try {
+            const run = await axios.post(`${host}/run`, { threadId: ensuredThreadId });
+            console.log("run result",run)
+            await new Promise(resolve => setTimeout(resolve, 15000));
+            const response = await axios.get(`${host}/last?threadId=${encodeURIComponent(ensuredThreadId)}`);
+            console.log("last message response",response)
+            if (response.data && response.data.messsages) {
+                const formattedMessages = response.data.messsages
+                    .filter(msg => msg.content.length > 0 && msg.content[0].text && msg.content[0].text.value)  // Check if the content array is not empty and has text value
+                    .map(msg => ({
+                        id: msg.id,
+                        role: msg.role,
+                        content: msg.content.map(content => content.text.value).join(' ')  // Combine all text content entries into a single string
+                    }));
+                setMessages(formattedMessages);
+                setInputValue('');  // Clear the input after a successful fetch
+            } else {
+                console.log('No messages data received.');
+            }
+        } catch (error) {
+            console.error('Error fetching last message:', error);
+            setError('Failed to fetch last message. Please try again.');
+        }
     };
 
     const handleMessageSubmit = async () => {
-        try {
-            let threadId = null;
 
-            if (!selectedThread) {
-                console.log('Creating new thread...');
-                const response = await axios.post(host+'/createThread', { userId: 1 });
-                const newThread = response.data;
-                setSelectedThread(newThread);
-                threadId = newThread.id;
-            } else {
-                threadId = selectedThread.id;
-            }
-
-            if (!threadId) {
-                throw new Error('No thread selected');
-            }
-
-            console.log('Submitting message:', inputValue);
-            // Optimistically update UI with the new message
-            const newMessage = {
-                content: inputValue,
-                role: 'User', // Assuming the message sender role is 'User'
-            };
-            setMessages(prevMessages => [...prevMessages, newMessage]);
-
-            await axios.post(host+'/chat', {
-                userId: 1,
-                message: inputValue,
-                threadId: threadId,
-            });
-
-            // Synchronize the messages with the server state
-            await listMessages(threadId);
-
-            setInputValue('');
-        } catch (error) {
-            console.error('Error submitting message:', error);
-            setError('Failed to submit message. Please try again.');
+        const messageContent = inputValue; // Capture the inputValue at the time of submitting the message
+        setError(null);
+        messagenumber = messagenumber+1
+        if (!messageContent) {
+            setError('Please enter a message before submitting.');
+            return;
         }
+
+        const ensuredThreadId = await ensureThreadId(messageContent);
+        if (!ensuredThreadId) {
+            setError('Failed to get or create thread ID.');
+            return;
+        }
+
+        console.log('Ensured Thread ID:', ensuredThreadId); // Debug the thread ID
+
+        // Prevent duplicate submissions by checking the last message
+        const lastMessage = messages.length > 0 ? messages[0].content : null;
+        if (messageContent === lastMessage) {
+            console.log('Duplicate message detected. Submission canceled.');
+            return; // Stop the submission of a duplicate message
+        }
+
+        // Add the user-submitted message to the messages immediately
+        if (messagenumber => 1) {
+            const newUserMessage = {
+                id: Date.now(), // Generate a unique ID for the message
+                role: 'user',
+                content: messageContent // Use the captured messageContent instead of inputValue
+            };
+            setMessages(prevMessages => [newUserMessage, ...prevMessages]); // Prepend the new message
+            setInputValue('');  // Clear the input after adding the message
+
+            // Call the API endpoint to send the message to OpenAI
+            try {
+                const response = await fetch(`${host}/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({message: messageContent, threadId: ensuredThreadId})  // Make sure 'body' is a valid JSON object and is stringified
+                });
+                const responseData = await response.json();
+                if (!response.ok) {
+                    throw new Error(responseData.error || 'Failed to send message');
+                }
+                console.log('Message sent:', responseData);
+            } catch (error) {
+                console.error('Error sending message:', error);
+                setError(error.message || 'Failed to send message.');
+            }
+
+            // Fetch the last message after adding the user-submitted message
+
+        }await fetchLastMessage(ensuredThreadId);
     };
 
-    const listMessages = async (threadId) => {
-        try {
-            const response = await axios.get(host+`/list-messages/${threadId}`);
-            console.log('List of messages:', response.data);
-            const messageData = response.data.data.map((message) => ({
-                content: message.content[0].text.value,
-                role: message.role === 'user' ? 'User' : 'Assistant',
-            }));
-            setMessages(messageData);
-        } catch (error) {
-            console.error('Error listing messages:', error);
-            setError('Failed to list messages. Please try again.');
-        }
+
+
+    // Handler for clicking a suggested question
+    const handleSuggestedClick = (question) => {
+        setInputValue(question);
     };
 
     return (
         <div style={{ display: 'flex', fontFamily: 'Arial, sans-serif', color: '#333' }}>
-            <div style={{ width: '30%', backgroundColor: '#f5f5f5', padding: '20px' }}>
-                <h2 style={{ color: '#007bff' }}>Threads</h2>
+            <div style={{ flex: 1, backgroundColor: '#fff', padding: '20px' }}>
+                <h2 style={{ color: '#007bff' }}>Add Message</h2>
+                {error && <div style={{ color: 'red' }}>Error: {error}</div>}
+                <input
+                    type="text"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    style={{ width: '100%', marginBottom: '10px' }}
+                />
+                <button onClick={handleMessageSubmit} style={{ display: 'block' }}>
+                    Submit
+                </button>
+                <div>
+                    {suggestedQuestions.map((question, index) => (
+                        <button key={index} onClick={() => handleSuggestedClick(question)} style={{ margin: '5px', padding: '10px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '5px', cursor: 'pointer' }}>
+                            {question}
+                        </button>
+                    ))}
+                </div>
                 <ul style={{ listStyleType: 'none', padding: 0 }}>
-                    {threads.map((thread, index) => (
-                        <li key={index} onClick={() => handleThreadChange(thread)} style={{ cursor: 'pointer', marginBottom: '10px', padding: '10px', borderRadius: '5px', backgroundColor: selectedThread && selectedThread.id === thread.id ? '#007bff' : '#fff', color: selectedThread && selectedThread.id === thread.id ? '#fff' : '#333' }}>
-                            {thread.id}
+                    {messages.map((message, index) => (
+                        <li key={index} style={{
+                            textAlign: message.role === 'user' ? 'left' : 'right',
+                            margin: '10px 0',
+                            padding: '5px 10px',
+                            borderRadius: '10px',
+                            background: message.role === 'user' ? '#e1f5fe' : '#e0f7fa',
+                            alignSelf: message.role === 'user' ? 'flex-start' : 'flex-end',
+                            maxWidth: '80%',
+                            marginLeft: message.role === 'user' ? '10px' : 'auto',
+                            marginRight: message.role === 'user' ? 'auto' : '10px'
+                        }}>
+                            {message.content}
                         </li>
                     ))}
                 </ul>
-            </div>
-            <div style={{ flex: 1, backgroundColor: '#fff', padding: '20px' }}>
-                <h2 style={{ color: '#007bff' }}>{selectedThread ? `Selected Thread: ${selectedThread.id}` : 'Add Message'}</h2>
-                {error && <div style={{ color: 'red' }}>Error: {error}</div>}
-                <div style={{ marginBottom: '20px' }}>
-                    <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} style={{ width: '70%', padding: '10px', marginRight: '10px', borderRadius: '5px', border: '1px solid #ccc' }} />
-                    <button onClick={handleMessageSubmit} style={{ padding: '10px 20px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Submit</button>
-                </div>
-                <div>
-                    <h3 style={{ color: '#007bff' }}>Message History</h3>
-                    <ul style={{ listStyleType: 'none', padding: 0 }}>
-                        {messages.map((message, index) => (
-                            <li key={index} style={{ marginBottom: '10px', padding: '10px', borderRadius: '5px', backgroundColor: message.role === 'User' ? '#007bff' : '#28a745', color: '#fff', textAlign: message.role === 'User' ? 'right' : 'left' }}>
-                                {message.content}
-                            </li>
-                        ))}
-                    </ul>
-                </div>
             </div>
         </div>
     );
