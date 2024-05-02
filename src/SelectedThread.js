@@ -8,7 +8,8 @@ const SelectedThread = () => {
     const [error, setError] = useState(null);
     const [suggestedQuestions, setSuggestedQuestions] = useState([]);
     const host = process.env.REACT_APP_ENDPOINT;
-    var messagenumber = 0
+
+    var initialMessage = ""
     useEffect(() => {
         // Parse suggested questions from the environment variable
         const questions = process.env.REACT_APP_QUESTIONS ? process.env.REACT_APP_QUESTIONS.split(',') : [];
@@ -18,12 +19,9 @@ const SelectedThread = () => {
     // Function to ensure a thread ID is available
     const ensureThreadId = async (inputValue) => {
         if (threadId) return threadId;
-
         try {
-            const initialMessage = { role: 'user', content: inputValue };
-            const response = await axios.post(`${host}/createThread`, { initialMessage });
+            const response = await axios.post(`${host}/createThread`, {  });
             setThreadId(response.data.id);
-
             return response.data.id;
         } catch (error) {
             console.error('Error creating thread:', error);
@@ -65,11 +63,6 @@ const SelectedThread = () => {
 
         const messageContent = inputValue; // Capture the inputValue at the time of submitting the message
         setError(null);
-        messagenumber = messagenumber+1
-        if (!messageContent) {
-            setError('Please enter a message before submitting.');
-            return;
-        }
 
         const ensuredThreadId = await ensureThreadId(messageContent);
         if (!ensuredThreadId) {
@@ -87,40 +80,40 @@ const SelectedThread = () => {
         }
 
         // Add the user-submitted message to the messages immediately
-        if (messagenumber => 1) {
-            const newUserMessage = {
+
+        const newUserMessage = {
                 id: Date.now(), // Generate a unique ID for the message
                 role: 'user',
                 content: messageContent // Use the captured messageContent instead of inputValue
             };
-            setMessages(prevMessages => [newUserMessage, ...prevMessages]); // Prepend the new message
-            setInputValue('');  // Clear the input after adding the message
+        setMessages(prevMessages => [newUserMessage, ...prevMessages]); // Prepend the new message
+        setInputValue('');  // Clear the input after adding the message
 
             // Call the API endpoint to send the message to OpenAI
-            try {
-                const response = await fetch(`${host}/chat`, {
+        try {
+            console.log(initialMessage, {role: 'user', content: messageContent})
+
+            const response = await fetch(`${host}/chat`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({message: messageContent, threadId: ensuredThreadId})  // Make sure 'body' is a valid JSON object and is stringified
+                    body: JSON.stringify({message: messageContent, threadId: ensuredThreadId})  // Properly formatted JSON string
                 });
-                const responseData = await response.json();
-                if (!response.ok) {
+            const responseData = await response.json(); // Convert response to JSON
+
+            if (!response.ok) {
                     throw new Error(responseData.error || 'Failed to send message');
-                }
-                console.log('Message sent:', responseData);
-            } catch (error) {
-                console.error('Error sending message:', error);
-                setError(error.message || 'Failed to send message.');
             }
+                console.log('Message sent:', responseData);
 
-            // Fetch the last message after adding the user-submitted message
+        } catch (error) {
+            console.error('Error sending message:', error);
+            setError(error.message || 'Failed to send message.');
+        }
 
-        }await fetchLastMessage(ensuredThreadId);
+        await fetchLastMessage(ensuredThreadId);
     };
-
-
 
     // Handler for clicking a suggested question
     const handleSuggestedClick = (question) => {
