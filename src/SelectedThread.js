@@ -19,9 +19,12 @@ const SelectedThread = () => {
     // Function to ensure a thread ID is available
     const ensureThreadId = async (inputValue) => {
         if (threadId) return threadId;
+
         try {
+            initialMessage = { role: 'user', content: inputValue };
             const response = await axios.post(`${host}/createThread`, {  });
             setThreadId(response.data.id);
+
             return response.data.id;
         } catch (error) {
             console.error('Error creating thread:', error);
@@ -64,6 +67,11 @@ const SelectedThread = () => {
         const messageContent = inputValue; // Capture the inputValue at the time of submitting the message
         setError(null);
 
+        if (messageContent == initialMessage) {
+            setError('Please enter a message before submitting.');
+            return;
+        }
+
         const ensuredThreadId = await ensureThreadId(messageContent);
         if (!ensuredThreadId) {
             setError('Failed to get or create thread ID.');
@@ -92,21 +100,23 @@ const SelectedThread = () => {
             // Call the API endpoint to send the message to OpenAI
         try {
             console.log(initialMessage, {role: 'user', content: messageContent})
-
-            const response = await fetch(`${host}/chat`, {
+            if (initialMessage === messageContent) {
+                return;
+            } else {
+                const response = await fetch(`${host}/chat`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({message: messageContent, threadId: ensuredThreadId})  // Properly formatted JSON string
                 });
-            const responseData = await response.json(); // Convert response to JSON
+                const responseData = await response.json(); // Convert response to JSON
 
-            if (!response.ok) {
+                if (!response.ok) {
                     throw new Error(responseData.error || 'Failed to send message');
-            }
+                }
                 console.log('Message sent:', responseData);
-
+            }
         } catch (error) {
             console.error('Error sending message:', error);
             setError(error.message || 'Failed to send message.');
