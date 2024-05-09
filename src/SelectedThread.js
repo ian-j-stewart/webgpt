@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Typography } from '@mui/material';
 
 const SelectedThread = () => {
     const [inputValue, setInputValue] = useState('');
@@ -133,6 +134,9 @@ const SelectedThread = () => {
     return (
         <div style={{ display: 'flex', fontFamily: 'Arial, sans-serif', color: '#333' }}>
             <div style={{ flex: 1, backgroundColor: '#fff', padding: '20px' }}>
+                <Typography variant="body2" style={{ color: 'red', marginBottom: '10px' }}>
+                    Disclaimer: This tool is a prototype for testing purposes. The advice provided here is not legal advice and should not be relied upon as such.
+                </Typography>
                 <h2 style={{ color: '#007bff' }}>Add Message</h2>
                 {error && <div style={{ color: 'red' }}>Error: {error}</div>}
                 <input
