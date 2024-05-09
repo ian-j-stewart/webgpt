@@ -1,24 +1,19 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Link , Navigate} from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { AppBar, Toolbar, Button, Typography, Container, Box } from '@mui/material';
 import SelectedThread from './SelectedThread'; // Adjust the import path as needed
-import About from './About'; // Ensure you have this component created
-import CAPTCHA from './CAPTCHA'; // Import the CAPTCHA component
+import About from './About';
+import CAPTCHA from './CAPTCHA';
 import { auth } from './firebase-config';
 import { useAuth } from './AuthContext';
-import {signOut} from "./Signout";
+import { signOut } from "./Signout";
+import CookieConsentPopup from './CookieConsentPopup'; // Make sure to import the CookieConsentPopup
 
 const ProtectedRoute = ({ children }) => {
     const { currentUser } = useAuth();
     return currentUser ? children : <Navigate to="/" />;
 };
-export const signUp = (email, password) => {
-    return auth.createUserWithEmailAndPassword(email, password);
-};
 
-export const signIn = (email, password) => {
-    return auth.signInWithEmailAndPassword(email, password);
-};
 const App = () => {
     const { currentUser } = useAuth();
 
@@ -49,9 +44,9 @@ const App = () => {
             <Box component="footer" sx={{ mt: 5, textAlign: 'center' }}>
                 <Button component={Link} to="/about">About This Site</Button>
             </Box>
+            <CookieConsentPopup />
         </BrowserRouter>
     );
 };
-
 
 export default App;
