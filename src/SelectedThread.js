@@ -40,7 +40,7 @@ const SelectedThread = () => {
         try {
             const run = await axios.post(`${host}/run`, { threadId: ensuredThreadId });
             console.log("run result",run)
-            await new Promise(resolve => setTimeout(resolve, 15000));
+            await new Promise(resolve => setTimeout(resolve, 20000));
             const response = await axios.get(`${host}/last?threadId=${encodeURIComponent(ensuredThreadId)}`);
             console.log("last message response",response)
             if (response.data && response.data.messsages) {
