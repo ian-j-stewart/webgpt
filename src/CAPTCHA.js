@@ -66,7 +66,7 @@ const CAPTCHA = () => {
 
     const siteKey = window.location.hostname === "localhost"
         ? process.env.REACT_APP_CAPTCHA_TEST_KEY
-        : process.env.REACT_APP_CAPCHA_KEY;
+        : process.env.REACT_APP_CAPTCHA_KEY;
 
     return (
         <div style={{ textAlign: 'center', marginTop: '50px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
