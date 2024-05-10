@@ -4,48 +4,54 @@ import { Typography } from '@mui/material';
 
 const SelectedThread = () => {
     const [inputValue, setInputValue] = useState('');
-    const [userMessages, setUserMessages] = useState([]);
-    const [systemMessages, setSystemMessages] = useState([]);
-    const [systemMessageBuffer, setSystemMessageBuffer] = useState('');
+    const [messages, setMessages] = useState([]);
     const [threadId, setThreadId] = useState(null);
     const [error, setError] = useState(null);
     const [suggestedQuestions, setSuggestedQuestions] = useState([]);
+    const [streamActive, setStreamActive] = useState(false);
     const host = process.env.REACT_APP_ENDPOINT;
 
     useEffect(() => {
-        const questions = process.env.REACT_APP_QUESTIONS ? process.env.REACT_APP_QUESTIONS.split(',') : [];
-        setSuggestedQuestions(questions);
+        setSuggestedQuestions(process.env.REACT_APP_QUESTIONS ? process.env.REACT_APP_QUESTIONS.split(',') : []);
+    }, []);
 
+    useEffect(() => {
         let eventSource;
-        if (threadId) {
-            eventSource = new EventSource(`${host}/stream?threadId=${threadId}`);
-            eventSource.onmessage = function (event) {
-                const newEvent = JSON.parse(event.data);
-                console.log(newEvent); // Log each received event for debugging
+        const connectEventSource = () => {
+            if (threadId && streamActive) {
+                eventSource = new EventSource(`${host}/stream?threadId=${threadId}`);
+                console.log("EventSource setup initiated.");
 
-                const messageFragment = newEvent.message;
-
-                // Continuously append the new fragment to the existing system messages
-                setSystemMessages(prevMessages => {
-                    // If there are no previous messages, initialize with the first fragment
-                    if (prevMessages.length === 0) {
-                        return [messageFragment];
-                    } else {
-                        // Append the new fragment to the existing (and only) message in the array
-                        let updatedMessage = prevMessages[0] + messageFragment;
-                        return [updatedMessage]; // Replace the existing message with the updated one
+                eventSource.onopen = () => console.log("Stream opened.");
+                eventSource.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (data.message && data.message !== "Stream completed") {
+                        setMessages(prev => {
+                            const newMessages = [...prev];
+                            const lastMessage = newMessages[newMessages.length - 1];
+                            if (lastMessage && lastMessage.role === 'system' && !lastMessage.content.includes(data.message)) {
+                                lastMessage.content +=  data.message;
+                            } else if (!lastMessage || lastMessage.role !== 'system') {
+                                newMessages.push({ role: 'system', content: data.message });
+                            }
+                            return newMessages;
+                        });
                     }
-                });
-            };
+                };
+                eventSource.onerror = () => {
+                    console.error("Stream encountered an error. Attempting to reconnect...");
+                    eventSource.close();
+                    setTimeout(connectEventSource, 5000); // Retry connection after 5 seconds
+                    setError('Stream connection failed. Retrying...');
+                };
+            }
+        };
 
-            eventSource.onerror = function (error) {
-                console.error('EventSource failed:', error);
-                eventSource.close();
-            };
-
-            return () => eventSource.close();
-        }
-    }, [threadId, host]);
+        connectEventSource();
+        return () => {
+            if (eventSource) eventSource.close();
+        };
+    }, [threadId, host, streamActive]);
 
     const ensureThreadId = async () => {
         if (!threadId) {
@@ -53,14 +59,15 @@ const SelectedThread = () => {
                 const initialMessage = { role: 'user', content: inputValue };
                 const response = await axios.post(`${host}/createThread`, { initialMessage });
                 setThreadId(response.data.id);
-                return response.data.id;
+                setStreamActive(true);  // Activate stream after creating a thread
+                return response.data.id;  // Return the thread ID for further use
             } catch (error) {
                 console.error('Error creating thread:', error);
                 setError('Failed to create thread. Please try again.');
-                return null;
+                return null;  // Return null if the thread creation failed
             }
         }
-        return threadId;
+        return threadId;  // Return existing thread ID if already set
     };
 
     const handleMessageSubmit = async () => {
@@ -70,28 +77,29 @@ const SelectedThread = () => {
             return;
         }
 
-        const ensuredThreadId = await ensureThreadId();
-        if (!ensuredThreadId) {
-            setError('Failed to get or create thread ID.');
-            return;
-        }
-
-        try {
-            await axios.post(`${host}/chat`, {
-                message: messageContent,
-                threadId: ensuredThreadId
-            });
-            setUserMessages(prev => [...prev, `You: ${messageContent}`]);
-            setInputValue('');  // Clear the input after sending the message
-        } catch (error) {
-            console.error('Error sending message:', error);
-            setError(error.message || 'Failed to send message.');
+        const id = await ensureThreadId();
+        if (id) {
+            try {
+                const response = await axios.post(`${host}/chat`, {
+                    message: messageContent,
+                    threadId: id
+                });
+                if (response.status === 200) {  // Check if the POST was successful
+                    setMessages(prev => [...prev, { role: 'user', content: `You: ${messageContent}` }]);
+                    setInputValue('');
+                    setStreamActive(true);  // Re-activate the stream to await system messages
+                } else {
+                    throw new Error('Failed to submit message.');
+                }
+            } catch (error) {
+                console.error('Error sending message:', error);
+                setError(error.message || 'Failed to send message.');
+                setStreamActive(false);  // Deactivate stream on error
+            }
         }
     };
 
-    const handleSuggestedClick = (question) => {
-        setInputValue(question);
-    };
+    const handleSuggestedClick = (question) => setInputValue(question);
 
     return (
         <div style={{ display: 'flex', fontFamily: 'Arial, sans-serif', color: '#333' }}>
@@ -100,7 +108,7 @@ const SelectedThread = () => {
                     Disclaimer: This tool is a prototype for testing purposes. The advice provided here is not legal advice and should not be relied upon as such.
                 </Typography>
                 <h2 style={{ color: '#007bff' }}>Add Message</h2>
-                {error && <div style={{ color: 'red' }}>Error: {error}</div>}
+                {error && <div style={{ color: 'red' }}>{error}</div>}
                 <input
                     type="text"
                     value={inputValue}
@@ -117,21 +125,12 @@ const SelectedThread = () => {
                         </button>
                     ))}
                 </div>
-                <div style={{ marginTop: '20px', backgroundColor: '#f8f8f8', border: '1px solid #ddd', padding: '10px', borderRadius: '5px', minHeight: '50px' }}>
-                    <h3>User Messages:</h3>
-                    {userMessages.map((msg, index) => (
-                        <div key={index} style={{ background: '#e1f5fe', padding: '5px', borderRadius: '5px', marginBottom: '5px' }}>
-                            {msg}
+                <div style={{ marginTop: '20px' }}>
+                    {messages.map((msg, index) => (
+                        <div key={index} style={{ background: msg.role === 'user' ? '#e1f5fe' : '#f0f0f0', padding: '5px', borderRadius: '5px', marginBottom: '5px', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
+                            {msg.content}
                         </div>
-                    ))}
-                </div>
-                <div style={{ marginTop: '20px', backgroundColor: '#e0f7fa', border: '1px solid #ccc', padding: '10px', borderRadius: '5px', minHeight: '50px' }}>
-                    <h3>System Responses:</h3>
-                    {systemMessages.map((msg, index) => (
-                        <div key={index} style={{ background: '#f0f0f0', padding: '5px', borderRadius: '5px', marginBottom: '5px' }}>
-                            {msg}
-                        </div>
-                    ))}
+                    )).reverse()}
                 </div>
             </div>
         </div>
