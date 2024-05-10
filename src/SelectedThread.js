@@ -20,7 +20,7 @@ const SelectedThread = () => {
     };
 
     const host = getHost();
-    console.log(host)
+    //console.log(host)
 
     useEffect(() => {
         setSuggestedQuestions(process.env.REACT_APP_QUESTIONS ? process.env.REACT_APP_QUESTIONS.split(',') : []);
@@ -31,7 +31,7 @@ const SelectedThread = () => {
         const connectEventSource = () => {
             if (threadId && streamActive) {
                 eventSource = new EventSource(`${host}/stream?threadId=${threadId}`);
-                console.log("EventSource setup initiated.");
+                //console.log("EventSource setup initiated.");
 
                 eventSource.onopen = () => console.log("Stream opened.");
                 eventSource.onmessage = (event) => {
@@ -50,7 +50,7 @@ const SelectedThread = () => {
                     }
                 };
                 eventSource.onerror = () => {
-                    console.error("Stream encountered an error. Attempting to reconnect...");
+                    //console.error("Stream encountered an error. Attempting to reconnect...");
                     eventSource.close();
                     setTimeout(connectEventSource, 5000); // Retry connection after 5 seconds
                     setError('Stream connection failed. Retrying...');
@@ -73,7 +73,7 @@ const SelectedThread = () => {
                 setStreamActive(true);  // Activate stream after creating a thread
                 return response.data.id;  // Return the thread ID for further use
             } catch (error) {
-                console.error('Error creating thread:', error);
+                //console.error('Error creating thread:', error);
                 setError('Failed to create thread. Please try again.');
                 return null;  // Return null if the thread creation failed
             }
@@ -103,7 +103,7 @@ const SelectedThread = () => {
                     throw new Error('Failed to submit message.');
                 }
             } catch (error) {
-                console.error('Error sending message:', error);
+                //console.error('Error sending message:', error);
                 setError(error.message || 'Failed to send message.');
                 setStreamActive(false);  // Deactivate stream on error
             }
