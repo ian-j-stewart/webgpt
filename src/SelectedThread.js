@@ -9,7 +9,18 @@ const SelectedThread = () => {
     const [error, setError] = useState(null);
     const [suggestedQuestions, setSuggestedQuestions] = useState([]);
     const [streamActive, setStreamActive] = useState(false);
-    const host = process.env.REACT_APP_ENDPOINT;
+    const getHost = () => {
+        const hostname = window.location.hostname;
+        if (hostname.includes('localhost')) {
+            return 'http://localhost:3000';
+        } else if (hostname.includes('excgpt.vercel.app')) {
+            return 'https://webgpt.adaptable.app';
+        }
+        return process.env.REACT_APP_ENDPOINT; // Fallback if none match
+    };
+
+    const host = getHost();
+    console.log(host)
 
     useEffect(() => {
         setSuggestedQuestions(process.env.REACT_APP_QUESTIONS ? process.env.REACT_APP_QUESTIONS.split(',') : []);
