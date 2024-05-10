@@ -4,129 +4,91 @@ import { Typography } from '@mui/material';
 
 const SelectedThread = () => {
     const [inputValue, setInputValue] = useState('');
-    const [messages, setMessages] = useState([]);
+    const [userMessages, setUserMessages] = useState([]);
+    const [systemMessages, setSystemMessages] = useState([]);
+    const [systemMessageBuffer, setSystemMessageBuffer] = useState('');
     const [threadId, setThreadId] = useState(null);
     const [error, setError] = useState(null);
     const [suggestedQuestions, setSuggestedQuestions] = useState([]);
     const host = process.env.REACT_APP_ENDPOINT;
 
-    var initialMessage = ""
     useEffect(() => {
-        // Parse suggested questions from the environment variable
         const questions = process.env.REACT_APP_QUESTIONS ? process.env.REACT_APP_QUESTIONS.split(',') : [];
         setSuggestedQuestions(questions);
-    }, []);
 
-    // Function to ensure a thread ID is available
-    const ensureThreadId = async (inputValue) => {
-        if (threadId) return threadId;
+        let eventSource;
+        if (threadId) {
+            eventSource = new EventSource(`${host}/stream?threadId=${threadId}`);
+            eventSource.onmessage = function (event) {
+                const newEvent = JSON.parse(event.data);
+                console.log(newEvent); // Log each received event for debugging
 
-        try {
-            initialMessage = { role: 'user', content: inputValue };
-            const response = await axios.post(`${host}/createThread`, {  });
-            setThreadId(response.data.id);
+                const messageFragment = newEvent.message;
 
-            return response.data.id;
-        } catch (error) {
-            console.error('Error creating thread:', error);
-            setError('Failed to create thread. Please try again.');
-            return null;
+                // Continuously append the new fragment to the existing system messages
+                setSystemMessages(prevMessages => {
+                    // If there are no previous messages, initialize with the first fragment
+                    if (prevMessages.length === 0) {
+                        return [messageFragment];
+                    } else {
+                        // Append the new fragment to the existing (and only) message in the array
+                        let updatedMessage = prevMessages[0] + messageFragment;
+                        return [updatedMessage]; // Replace the existing message with the updated one
+                    }
+                });
+            };
+
+            eventSource.onerror = function (error) {
+                console.error('EventSource failed:', error);
+                eventSource.close();
+            };
+
+            return () => eventSource.close();
         }
-    };
+    }, [threadId, host]);
 
-    // Function to trigger a backend process on the thread
-
-    // Function to fetch the last message from the server
-    const fetchLastMessage = async (ensuredThreadId) => {
-        try {
-            const run = await axios.post(`${host}/run`, { threadId: ensuredThreadId });
-            console.log("run result",run)
-            await new Promise(resolve => setTimeout(resolve, 20000));
-            const response = await axios.get(`${host}/last?threadId=${encodeURIComponent(ensuredThreadId)}`);
-            console.log("last message response",response)
-            if (response.data && response.data.messsages) {
-                const formattedMessages = response.data.messsages
-                    .filter(msg => msg.content.length > 0 && msg.content[0].text && msg.content[0].text.value)  // Check if the content array is not empty and has text value
-                    .map(msg => ({
-                        id: msg.id,
-                        role: msg.role,
-                        content: msg.content.map(content => content.text.value).join(' ')  // Combine all text content entries into a single string
-                    }));
-                setMessages(formattedMessages);
-                setInputValue('');  // Clear the input after a successful fetch
-            } else {
-                console.log('No messages data received.');
+    const ensureThreadId = async () => {
+        if (!threadId) {
+            try {
+                const initialMessage = { role: 'user', content: inputValue };
+                const response = await axios.post(`${host}/createThread`, { initialMessage });
+                setThreadId(response.data.id);
+                return response.data.id;
+            } catch (error) {
+                console.error('Error creating thread:', error);
+                setError('Failed to create thread. Please try again.');
+                return null;
             }
-        } catch (error) {
-            console.error('Error fetching last message:', error);
-            setError('Failed to fetch last message. Please try again.');
         }
+        return threadId;
     };
 
     const handleMessageSubmit = async () => {
-
-        const messageContent = inputValue; // Capture the inputValue at the time of submitting the message
-        setError(null);
-
-        if (messageContent == initialMessage) {
+        const messageContent = inputValue.trim();
+        if (!messageContent) {
             setError('Please enter a message before submitting.');
             return;
         }
 
-        const ensuredThreadId = await ensureThreadId(messageContent);
+        const ensuredThreadId = await ensureThreadId();
         if (!ensuredThreadId) {
             setError('Failed to get or create thread ID.');
             return;
         }
 
-        console.log('Ensured Thread ID:', ensuredThreadId); // Debug the thread ID
-
-        // Prevent duplicate submissions by checking the last message
-        const lastMessage = messages.length > 0 ? messages[0].content : null;
-        if (messageContent === lastMessage) {
-            console.log('Duplicate message detected. Submission canceled.');
-            return; // Stop the submission of a duplicate message
-        }
-
-        // Add the user-submitted message to the messages immediately
-
-        const newUserMessage = {
-                id: Date.now(), // Generate a unique ID for the message
-                role: 'user',
-                content: messageContent // Use the captured messageContent instead of inputValue
-            };
-        setMessages(prevMessages => [newUserMessage, ...prevMessages]); // Prepend the new message
-        setInputValue('');  // Clear the input after adding the message
-
-            // Call the API endpoint to send the message to OpenAI
         try {
-            console.log(initialMessage, {role: 'user', content: messageContent})
-            if (initialMessage === messageContent) {
-                return;
-            } else {
-                const response = await fetch(`${host}/chat`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({message: messageContent, threadId: ensuredThreadId})  // Properly formatted JSON string
-                });
-                const responseData = await response.json(); // Convert response to JSON
-
-                if (!response.ok) {
-                    throw new Error(responseData.error || 'Failed to send message');
-                }
-                console.log('Message sent:', responseData);
-            }
+            await axios.post(`${host}/chat`, {
+                message: messageContent,
+                threadId: ensuredThreadId
+            });
+            setUserMessages(prev => [...prev, `You: ${messageContent}`]);
+            setInputValue('');  // Clear the input after sending the message
         } catch (error) {
             console.error('Error sending message:', error);
             setError(error.message || 'Failed to send message.');
         }
-
-        await fetchLastMessage(ensuredThreadId);
     };
 
-    // Handler for clicking a suggested question
     const handleSuggestedClick = (question) => {
         setInputValue(question);
     };
@@ -155,23 +117,22 @@ const SelectedThread = () => {
                         </button>
                     ))}
                 </div>
-                <ul style={{ listStyleType: 'none', padding: 0 }}>
-                    {messages.map((message, index) => (
-                        <li key={index} style={{
-                            textAlign: message.role === 'user' ? 'left' : 'right',
-                            margin: '10px 0',
-                            padding: '5px 10px',
-                            borderRadius: '10px',
-                            background: message.role === 'user' ? '#e1f5fe' : '#e0f7fa',
-                            alignSelf: message.role === 'user' ? 'flex-start' : 'flex-end',
-                            maxWidth: '80%',
-                            marginLeft: message.role === 'user' ? '10px' : 'auto',
-                            marginRight: message.role === 'user' ? 'auto' : '10px'
-                        }}>
-                            {message.content}
-                        </li>
+                <div style={{ marginTop: '20px', backgroundColor: '#f8f8f8', border: '1px solid #ddd', padding: '10px', borderRadius: '5px', minHeight: '50px' }}>
+                    <h3>User Messages:</h3>
+                    {userMessages.map((msg, index) => (
+                        <div key={index} style={{ background: '#e1f5fe', padding: '5px', borderRadius: '5px', marginBottom: '5px' }}>
+                            {msg}
+                        </div>
                     ))}
-                </ul>
+                </div>
+                <div style={{ marginTop: '20px', backgroundColor: '#e0f7fa', border: '1px solid #ccc', padding: '10px', borderRadius: '5px', minHeight: '50px' }}>
+                    <h3>System Responses:</h3>
+                    {systemMessages.map((msg, index) => (
+                        <div key={index} style={{ background: '#f0f0f0', padding: '5px', borderRadius: '5px', marginBottom: '5px' }}>
+                            {msg}
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );
